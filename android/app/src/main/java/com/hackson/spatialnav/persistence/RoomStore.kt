@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.Log
 import com.hackson.spatialnav.model.RoomMap
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * Rooms on local storage, one JSON file per room.
@@ -35,7 +37,9 @@ class RoomStore(private val directory: File) {
         val target = fileFor(room.roomId)
         val temp = File(directory, "${room.roomId}.tmp")
         temp.writeText(RoomJson.encode(room))
-        check(temp.renameTo(target)) { "could not replace ${target.name}" }
+        // File.renameTo does not replace an existing destination on every filesystem, so
+        // re-saving a room could silently leave the previous version in place.
+        Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
         Log.i(TAG, "saved room ${room.roomId} (${room.destinations.size} destinations)")
     }
 

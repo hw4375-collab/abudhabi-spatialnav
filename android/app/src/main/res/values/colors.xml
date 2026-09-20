@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  High-contrast palette. Low vision is the primary accessibility case here, so the app is
+  black-on-bright rather than a tinted Material surface.
+-->
+<resources>
+    <color name="nav_background">#FF000000</color>
+    <color name="nav_surface">#FF141414</color>
+    <color name="nav_scrim">#E6000000</color>
+    <color name="nav_text">#FFFFFFFF</color>
+    <color name="nav_text_muted">#FFBDBDBD</color>
+    <color name="nav_accent">#FFFFD400</color>
+    <color name="nav_on_accent">#FF000000</color>
+    <color name="nav_success">#FF00E676</color>
+</resources>
