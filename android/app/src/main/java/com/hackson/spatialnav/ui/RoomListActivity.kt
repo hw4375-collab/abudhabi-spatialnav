@@ -3,24 +3,22 @@ package com.hackson.spatialnav.ui
 import android.content.Intent
 import android.os.Bundle
 import android.text.InputType
+import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.EditText
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import com.hackson.spatialnav.BuildConfig
 import com.hackson.spatialnav.R
-import com.hackson.spatialnav.ar.CloudAnchorStrategy
-import com.hackson.spatialnav.ar.ManualOriginStrategy
 import com.hackson.spatialnav.databinding.ActivityRoomListBinding
 import com.hackson.spatialnav.model.RoomMap
 import com.hackson.spatialnav.persistence.RoomStore
-import java.text.SimpleDateFormat
-import java.util.Locale
 
 /**
- * The app's entry point: create a room, or reopen one that was mapped earlier.
+ * Home: navigate a space that was mapped earlier, or map a new one.
  *
- * Reopening a saved room is the whole point of P2, so the list is the first thing on screen.
+ * Diagnostics live behind a single small entry at the bottom — the hardware QA screens are
+ * still one tap away without turning the first thing a user sees into a tool.
  */
 class RoomListActivity : AppCompatActivity() {
 
@@ -34,16 +32,10 @@ class RoomListActivity : AppCompatActivity() {
         setContentView(binding.root)
         store = RoomStore(RoomStore.defaultDirectory(this))
 
+        binding.navigateButton.setOnClickListener { navigate() }
         binding.createRoomButton.setOnClickListener { askRoomName() }
-        binding.hardwareCheckButton.setOnClickListener {
-            startActivity(Intent(this, HardwareCheckActivity::class.java))
-        }
-        binding.arDiagnosticButton.setOnClickListener {
-            startActivity(Intent(this, ArDiagnosticActivity::class.java))
-        }
-        binding.roomList.setOnItemClickListener { _, _, position, _ ->
-            open(rooms[position])
-        }
+        binding.diagnosticsButton.setOnClickListener { showDiagnostics() }
+        binding.roomList.setOnItemClickListener { _, _, position, _ -> open(rooms[position]) }
         binding.roomList.setOnItemLongClickListener { _, _, position, _ ->
             confirmDelete(rooms[position])
             true
@@ -57,30 +49,35 @@ class RoomListActivity : AppCompatActivity() {
 
     private fun refresh() {
         rooms = store.list()
-        binding.headerText.text = buildString {
-            append("Spatial reference: ")
-            append(
-                if (BuildConfig.ARCORE_API_KEY_CONFIGURED) {
-                    "${CloudAnchorStrategy.ID} (API key present)"
-                } else {
-                    "${ManualOriginStrategy.ID} (no ARCore API key in this build)"
-                }
-            )
-            append("\nSaved rooms: ${rooms.size}")
-        }
-        binding.roomList.adapter = ArrayAdapter(
-            this,
-            android.R.layout.simple_list_item_1,
-            rooms.map(::describe),
-        )
+        binding.emptyText.visibility = if (rooms.isEmpty()) View.VISIBLE else View.GONE
+        binding.navigateButton.isEnabled = rooms.isNotEmpty()
+        binding.roomList.adapter = ArrayAdapter(this, R.layout.item_space, rooms.map(::describe))
     }
 
     private fun describe(room: RoomMap): String = buildString {
         append(room.displayName)
-        append("\n  ${room.destinations.size} destinations")
-        append(" · ${room.spatialReference.strategy}")
-        if (room.spatialReference.isExpired) append(" · REFERENCE EXPIRED")
-        append("\n  saved ${TIMESTAMP.format(room.updatedAtEpochMs)}")
+        append("\n")
+        append(
+            when (room.destinations.size) {
+                0 -> "no destinations yet"
+                1 -> "1 destination"
+                else -> "${room.destinations.size} destinations"
+            }
+        )
+    }
+
+    /** One saved space goes straight in; several ask which one. */
+    private fun navigate() {
+        when (rooms.size) {
+            0 -> Toast.makeText(this, R.string.no_spaces_yet, Toast.LENGTH_LONG).show()
+            1 -> open(rooms.first())
+            else -> AlertDialog.Builder(this)
+                .setTitle(R.string.saved_spaces)
+                .setItems(rooms.map { it.displayName }.toTypedArray()) { _, index ->
+                    open(rooms[index])
+                }
+                .show()
+        }
     }
 
     private fun askRoomName() {
@@ -106,7 +103,7 @@ class RoomListActivity : AppCompatActivity() {
     private fun confirmDelete(room: RoomMap) {
         AlertDialog.Builder(this)
             .setTitle(room.displayName)
-            .setMessage("Delete this room and its destinations?")
+            .setMessage("Delete this space and its destinations?")
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.delete) { _, _ ->
                 store.delete(room.roomId)
@@ -115,7 +112,21 @@ class RoomListActivity : AppCompatActivity() {
             .show()
     }
 
-    private companion object {
-        val TIMESTAMP = SimpleDateFormat("MMM d HH:mm", Locale.US)
+    private fun showDiagnostics() {
+        val screens = arrayOf(
+            getString(R.string.hardware_check),
+            getString(R.string.open_ar),
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.diagnostics)
+            .setItems(screens) { _, index ->
+                startActivity(
+                    when (index) {
+                        0 -> Intent(this, HardwareCheckActivity::class.java)
+                        else -> Intent(this, ArDiagnosticActivity::class.java)
+                    }
+                )
+            }
+            .show()
     }
 }

@@ -1,8 +1,27 @@
-# Hackson — Indoor Spatial Navigation for Blind Users
+# SpatialNav
 
-Kotlin Android app that maps an indoor space once, then relocalizes the user with the live
-camera and guides them to a semantic destination with voice instructions and live obstacle
-warnings.
+SpatialNav is an accessibility-focused indoor navigation app that remembers meaningful
+places in a room and guides users to them using real-time spatial tracking and voice
+instructions.
+
+**Map → Save Destination → Navigate → Voice Guidance**
+
+1. **Map a Room** — hold the phone up until tracking stabilizes, then set the room origin.
+2. **Add Destination** — walk to the bathroom, the door, the desk; each is saved in the
+   room's own coordinate frame.
+3. **Navigate** — reopen the space later, pick a destination, and follow the large arrow.
+4. **Voice guidance** — "Turn left.", "Bathroom is 3 meters ahead.", "You have arrived at
+   Bathroom." Speech happens on instruction changes and distance milestones only.
+
+Built with **Kotlin** in **Android Studio**, on **ARCore** (motion tracking and a persistent
+spatial reference) and **Android TextToSpeech**. Open the **`android/`** directory in
+Android Studio and run the `app` configuration on a connected device.
+
+Current limitation: the demo build uses a **manual origin** as the persistent spatial
+reference — the user physically returns to a marked spot to re-align. It is a calibration
+mechanism, not production-grade persistent localization; on a second restart the measured
+error on a Xiaomi 14 was 3.65 m. Cloud Anchors are implemented behind the same interface and
+only need an API key (see `docs/07-p2-device-test.md`).
 
 ## Repository layout
 
@@ -66,3 +85,4 @@ and visualization layer, not a navigation dependency.
 * `docs/05-arcore-camera-ownership.md` — why ARCore, not CameraX, owns the camera
 * `docs/06-p1-device-test.md` — TTS fix plus the ARCore capability / live pose test
 * `docs/07-p2-device-test.md` — persistent room + destinations, and the ARCore API key setup
+* `docs/08-p3-demo-qa.md` — the demo flow, navigation rules and device QA checklist

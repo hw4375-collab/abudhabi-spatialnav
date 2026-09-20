@@ -1,21 +1,41 @@
 <resources>
     <string name="app_name">SpatialNav</string>
-    <string name="speak">Test TTS</string>
-    <string name="open_ar">ARCore diagnostic (P1)</string>
-    <string name="hardware_check">Hardware check (P0)</string>
-    <string name="reset_origin">Reset origin here</string>
-    <string name="create_room">Create room</string>
-    <string name="saved_rooms">Saved rooms</string>
-    <string name="room_starting">starting…</string>
-    <string name="anchor_room_here">Anchor room here</string>
-    <string name="align_here">I am on the marker — align</string>
+    <string name="tagline">Navigate spaces with confidence.</string>
+
+    <!-- Home -->
+    <string name="navigate">Navigate</string>
+    <string name="map_a_room">Map a Room</string>
+    <string name="saved_spaces">Saved Spaces</string>
+    <string name="no_spaces_yet">No spaces yet. Tap “Map a Room” to add one.</string>
+    <string name="diagnostics">Developer / Diagnostics</string>
+
+    <!-- Mapping and alignment -->
+    <string name="set_room_origin">Set Room Origin</string>
+    <string name="align_here">I am on the marker — Align</string>
+    <string name="add_destination">Add Destination</string>
+    <string name="where_to">Where do you want to go?</string>
+    <string name="tracking_ready">Spatial tracking ready</string>
     <string name="mark_door">Door</string>
     <string name="mark_bathroom">Bathroom</string>
     <string name="mark_desk">Desk</string>
     <string name="mark_custom">Custom…</string>
-    <string name="room_name">Room name</string>
+    <string name="room_name">Space name</string>
     <string name="destination_name">Destination name</string>
     <string name="origin_description">Where is this spot? (e.g. on the door mat facing the window)</string>
+
+    <!-- Navigation -->
+    <string name="stop">STOP</string>
+    <string name="path_clear">Path clear</string>
+    <string name="arrived">You’ve arrived</string>
+
+    <!-- Diagnostics screens -->
+    <string name="speak">Test TTS</string>
+    <string name="open_ar">ARCore diagnostic (P1)</string>
+    <string name="hardware_check">Hardware check (P0)</string>
+    <string name="reset_origin">Reset origin here</string>
+    <string name="debug_toggle">ⓘ</string>
+    <string name="room_starting">starting…</string>
+
     <string name="cancel">Cancel</string>
     <string name="ok">OK</string>
     <string name="delete">Delete</string>

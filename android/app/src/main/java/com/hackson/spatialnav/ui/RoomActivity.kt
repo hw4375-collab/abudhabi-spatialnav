@@ -8,8 +8,11 @@ import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.os.Build
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
 import android.text.InputType
 import android.util.Log
+import android.view.View
+import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,9 +39,12 @@ import com.hackson.spatialnav.model.Destination
 import com.hackson.spatialnav.model.RoomMap
 import com.hackson.spatialnav.model.SpatialReferenceRecord
 import com.hackson.spatialnav.model.Vec3
+import com.hackson.spatialnav.navigation.GuidanceAnnouncer
+import com.hackson.spatialnav.navigation.NavigationEngine
 import com.hackson.spatialnav.navigation.NavigationFrame
 import com.hackson.spatialnav.persistence.RoomStore
 import com.hackson.spatialnav.util.RollingFps
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 import javax.microedition.khronos.egl.EGLConfig
@@ -46,8 +52,10 @@ import javax.microedition.khronos.opengles.GL10
 import kotlin.math.sqrt
 
 /**
- * P2: map a room once, mark semantic destinations in it, and find both again after the app
- * has been closed.
+ * The whole product in one screen: align the space, pick a destination, walk there.
+ *
+ * All three phases share a single ARCore session because relocalizing is expensive and the
+ * pose must stay continuous between picking a destination and following it.
  *
  * The room's coordinate frame is defined by the spatial reference anchor, *not* by wherever
  * the session happened to start — that is what makes the saved destinations mean the same
@@ -58,11 +66,14 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     private enum class Relocalization { NOT_STARTED, SEARCHING, SUCCESS, FAILED }
 
+    private enum class Phase { ALIGNING, PICKING, NAVIGATING }
+
     private lateinit var binding: ActivityRoomBinding
     private lateinit var store: RoomStore
     private val renderer = BackgroundRenderer()
     private val fps = RollingFps()
     private val stabilizer = TrackingStabilizer()
+    private val announcer = GuidanceAnnouncer()
 
     /** Work that must run on the GL thread, where the ARCore session is driven. */
     private val glTasks = ConcurrentLinkedQueue<(Frame) -> Unit>()
@@ -75,6 +86,9 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private var viewportWidth = 0
     private var viewportHeight = 0
     private var viewportDirty = true
+
+    private var tts: TextToSpeech? = null
+    private var ttsReady = false
 
     /** Null in create mode until the room is anchored. */
     @Volatile
@@ -94,6 +108,14 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     @Volatile
     private var localPose: NavigationFrame.Local? = null
 
+    private var phase = Phase.ALIGNING
+
+    @Volatile
+    private var target: Destination? = null
+
+    @Volatile
+    private var fix: NavigationEngine.Fix? = null
+
     private val requestCamera =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (!granted) {
@@ -111,7 +133,7 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         val roomId = intent.getStringExtra(EXTRA_ROOM_ID)
         if (roomId != null) {
             room = store.load(roomId) ?: run {
-                Toast.makeText(this, "room not found", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "space not found", Toast.LENGTH_LONG).show()
                 finish()
                 return
             }
@@ -128,10 +150,17 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         binding.surfaceView.renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
 
         binding.primaryButton.setOnClickListener { onPrimaryAction() }
-        binding.markDoorButton.setOnClickListener { markDestination("Door") }
-        binding.markBathroomButton.setOnClickListener { markDestination("Bathroom") }
-        binding.markDeskButton.setOnClickListener { markDestination("Desk") }
-        binding.markCustomButton.setOnClickListener { askCustomDestination() }
+        binding.addDestinationButton.setOnClickListener { askDestinationToAdd() }
+        binding.stopButton.setOnClickListener { stopNavigation() }
+        binding.debugToggle.setOnClickListener {
+            binding.debugText.visibility =
+                if (binding.debugText.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
+
+        tts = TextToSpeech(this) { status ->
+            ttsReady = status == TextToSpeech.SUCCESS
+            if (ttsReady) tts?.language = Locale.US
+        }
 
         render()
     }
@@ -171,6 +200,7 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     override fun onPause() {
         super.onPause()
+        tts?.stop()
         if (session != null) {
             binding.surfaceView.onPause()
             session?.pause()
@@ -178,6 +208,8 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     override fun onDestroy() {
+        tts?.shutdown()
+        tts = null
         if (::strategy.isInitialized) strategy.close()
         session?.close()
         session = null
@@ -306,8 +338,7 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         relocalizationDetail = "reference created"
         Log.i(TAG, "ROOM_CREATED id=${created.roomId} strategy=${record.strategy} " +
             "cloudAnchorId=${record.cloudAnchorId ?: "-"}")
-        toast("Room saved. Walk to a destination and mark it.")
-        render()
+        onAligned("Space saved. Walk to a place and add it.")
     }
 
     private fun startResolve(existing: RoomMap) {
@@ -325,7 +356,7 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                             relocalization = Relocalization.SUCCESS
                             relocalizationDetail = "reference recovered"
                             Log.i(TAG, "RELOCALIZATION=SUCCESS room=${existing.roomId}")
-                            render()
+                            onAligned("${existing.displayName} is ready.")
                         },
                         onFailure = { error -> onReferenceFailed(error) },
                     )
@@ -334,11 +365,32 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         }
     }
 
+    private fun onAligned(spokenMessage: String) {
+        phase = Phase.PICKING
+        speak(spokenMessage)
+        render()
+    }
+
     private fun onReferenceFailed(error: Throwable) {
         relocalization = Relocalization.FAILED
         relocalizationDetail = error.message ?: error.javaClass.simpleName
-        Log.w(TAG, "RELOCALIZATION=FAILED ${relocalizationDetail}")
+        Log.w(TAG, "RELOCALIZATION=FAILED $relocalizationDetail")
         render()
+    }
+
+    private fun askDestinationToAdd() {
+        val presets = arrayOf(
+            getString(R.string.mark_bathroom),
+            getString(R.string.mark_door),
+            getString(R.string.mark_desk),
+            getString(R.string.mark_custom),
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.add_destination)
+            .setItems(presets) { _, index ->
+                if (index == presets.lastIndex) askCustomDestination() else markDestination(presets[index])
+            }
+            .show()
     }
 
     private fun askCustomDestination() {
@@ -364,7 +416,7 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         val current = room
         val local = localPose
         if (current == null || relocalization != Relocalization.SUCCESS || local == null) {
-            toast("Anchor the room first.")
+            toast("Align the space first.")
             return
         }
         val now = System.currentTimeMillis()
@@ -380,8 +432,53 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         store.save(updated)
         Log.i(TAG, "DESTINATION_MARKED name=$name x=%+.3f y=%+.3f z=%+.3f yaw=%+.1f"
             .format(local.x, local.y, local.z, local.yawDeg))
-        toast("$name saved at %.2f, %.2f, %.2f".format(local.x, local.y, local.z))
+        speak("$name saved here.")
         render()
+    }
+
+    // ---- navigation ---------------------------------------------------------------------
+
+    private fun startNavigation(destination: Destination) {
+        target = destination
+        fix = null
+        announcer.reset()
+        phase = Phase.NAVIGATING
+        Log.i(NAV_TAG, "NAV_START destination=${destination.name} " +
+            "target=%+.2f,%+.2f".format(destination.position.x, destination.position.z))
+        speak("Navigating to ${destination.name}.")
+        render()
+    }
+
+    private fun stopNavigation() {
+        target?.let { Log.i(NAV_TAG, "NAV_STOP destination=${it.name}") }
+        target = null
+        fix = null
+        phase = Phase.PICKING
+        tts?.stop()
+        render()
+    }
+
+    private fun updateNavigation(local: NavigationFrame.Local) {
+        val destination = target ?: return
+        val solved = NavigationEngine.solve(local, destination.position)
+        fix = solved
+        announcer.next(solved, destination.name, System.currentTimeMillis())?.let { speak(it) }
+        if (fps.totalFrames % POSE_LOG_INTERVAL == 0L) {
+            Log.i(
+                NAV_TAG,
+                ("destination=%s current=%+.2f,%+.2f target=%+.2f,%+.2f distance=%.2f " +
+                    "headingError=%+.1f state=%s").format(
+                    destination.name, local.x, local.z,
+                    destination.position.x, destination.position.z,
+                    solved.distanceMeters, solved.headingErrorDeg, solved.state.name,
+                )
+            )
+        }
+    }
+
+    private fun speak(text: String) {
+        if (!ttsReady) return
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, text)
     }
 
     // ---- rendering ----------------------------------------------------------------------
@@ -443,10 +540,12 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             runOnUiThread { startResolve(existing) }
         }
 
-        localPose = originPose()?.let { origin ->
+        val local = originPose()?.let { origin ->
             NavigationFrame(origin.translation, origin.rotationQuaternion)
                 .localize(camera.pose.translation, camera.pose.rotationQuaternion)
         }
+        localPose = local
+        if (local != null && phase == Phase.NAVIGATING) runOnUiThread { updateNavigation(local) }
         logPose()
     }
 
@@ -482,58 +581,129 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         return sqrt(dx * dx + dy * dy + dz * dz)
     }
 
+    // ---- screens ------------------------------------------------------------------------
+
     private fun render() {
+        binding.setupPanel.visibility = visibleIf(phase == Phase.ALIGNING)
+        binding.destinationPanel.visibility = visibleIf(phase == Phase.PICKING)
+        binding.navPanel.visibility = visibleIf(phase == Phase.NAVIGATING)
+        when (phase) {
+            Phase.ALIGNING -> renderSetup()
+            Phase.PICKING -> renderPicker()
+            Phase.NAVIGATING -> renderNavigation()
+        }
+        if (binding.debugText.visibility == View.VISIBLE) binding.debugText.text = debugReport()
+    }
+
+    private fun renderSetup() {
         val current = room
-        binding.primaryButton.isEnabled = stabilizer.state == TrackingStabilizer.State.READY &&
-            relocalization != Relocalization.SUCCESS &&
-            relocalization != Relocalization.SEARCHING
+        binding.setupTitle.text = current?.displayName ?: pendingRoomName
         binding.primaryButton.setText(
-            if (current == null) R.string.anchor_room_here else R.string.align_here
+            if (current == null) R.string.set_room_origin else R.string.align_here
         )
-        val canMark = relocalization == Relocalization.SUCCESS && localPose != null
-        binding.markDoorButton.isEnabled = canMark
-        binding.markBathroomButton.isEnabled = canMark
-        binding.markDeskButton.isEnabled = canMark
-        binding.markCustomButton.isEnabled = canMark
+        val ready = stabilizer.state == TrackingStabilizer.State.READY
+        binding.primaryButton.isEnabled = ready && relocalization != Relocalization.SEARCHING
+        binding.setupMessage.text = when {
+            relocalization == Relocalization.SEARCHING -> "Looking for the space…"
+            relocalization == Relocalization.FAILED ->
+                "Could not recover the space: $relocalizationDetail\nTry again."
 
-        binding.statusText.text = buildString {
-            if (current == null) {
-                append("Room: $pendingRoomName (not created yet)\n")
-            } else {
-                append("Room: ${current.displayName} [${current.roomId}]\n")
-            }
-            append("Reference: ${strategy.displayName} — ${strategy.status()}\n")
-            strategy.unavailableReason()?.let { append("  unavailable: $it\n") }
-            append("Relocalization: ${relocalization.name}")
-            if (relocalizationDetail.isNotEmpty()) append(" — $relocalizationDetail")
-            append("\n")
-            append("Tracking: $trackingText\n")
-            append("Init: ${stabilizer.state.name} — ${stabilizer.message()}\n")
-            append("Session: $sessionStatus   fps %.1f\n\n".format(fps.fps()))
+            !ready -> stabilizer.message()
+            current == null ->
+                "${stabilizer.message()}\n\nStand where the space should start from, then set " +
+                    "the origin."
 
-            val local = localPose
-            if (local == null) {
-                append("Position: waiting for the room origin\n")
-            } else {
-                append("Position in room\n")
-                append("X right   : %+.3f m\n".format(local.x))
-                append("Y up      : %+.3f m\n".format(local.y))
-                append("Z forward : %+.3f m\n".format(local.z))
-                append("Yaw       : %+.1f deg\n".format(local.yawDeg))
-            }
-            append("\nDestinations (${current?.destinations?.size ?: 0})\n")
-            current?.destinations?.forEach { destination ->
-                append("  %-10s %+.2f %+.2f %+.2f".format(
-                    destination.name,
-                    destination.position.x,
-                    destination.position.y,
-                    destination.position.z,
-                ))
-                if (local != null) append("   %.2f m away".format(distanceTo(destination, local)))
-                append("\n")
+            else ->
+                "${stabilizer.message()}\n\nStand on ${current.spatialReference.originDescription}" +
+                    ", face the same way, then align."
+        }
+    }
+
+    private fun renderPicker() {
+        val current = room ?: return
+        binding.roomTitle.text = current.displayName
+        binding.roomStatus.text = if (trackingText == "TRACKING") {
+            getString(R.string.tracking_ready)
+        } else {
+            trackingText
+        }
+        val container = binding.destinationContainer
+        if (container.childCount != current.destinations.size) {
+            container.removeAllViews()
+            current.destinations.forEach { destination ->
+                val button = layoutInflater
+                    .inflate(R.layout.item_destination_button, container, false) as Button
+                button.text = destination.name
+                button.setOnClickListener { startNavigation(destination) }
+                container.addView(button)
             }
         }
     }
+
+    private fun renderNavigation() {
+        val destination = target ?: return
+        val solved = fix
+        binding.destinationLabel.text = "to ${destination.name}"
+        if (solved == null) {
+            binding.arrowText.text = "…"
+            binding.instructionText.text = ""
+            binding.distanceText.text = ""
+            return
+        }
+        binding.arrowText.text = when (solved.state) {
+            NavigationEngine.State.GO_FORWARD -> "\u2191"
+            NavigationEngine.State.TURN_LEFT -> "\u21B0"
+            NavigationEngine.State.TURN_RIGHT -> "\u21B1"
+            NavigationEngine.State.ARRIVED -> "\u2713"
+        }
+        binding.instructionText.text = when (solved.state) {
+            NavigationEngine.State.GO_FORWARD -> "GO FORWARD"
+            NavigationEngine.State.TURN_LEFT -> "TURN LEFT"
+            NavigationEngine.State.TURN_RIGHT -> "TURN RIGHT"
+            NavigationEngine.State.ARRIVED -> getString(R.string.arrived)
+        }
+        binding.distanceText.text = if (solved.state == NavigationEngine.State.ARRIVED) {
+            destination.name
+        } else {
+            "%.1f m".format(solved.distanceMeters)
+        }
+    }
+
+    private fun debugReport(): String = buildString {
+        val current = room
+        append("Room: ${current?.displayName ?: pendingRoomName} [${current?.roomId ?: "-"}]\n")
+        append("Reference: ${strategy.displayName} — ${strategy.status()}\n")
+        strategy.unavailableReason()?.let { append("  unavailable: $it\n") }
+        append("Relocalization: ${relocalization.name}")
+        if (relocalizationDetail.isNotEmpty()) append(" — $relocalizationDetail")
+        append("\n")
+        append("Tracking: $trackingText\n")
+        append("Init: ${stabilizer.state.name}\n")
+        append("Session: $sessionStatus   fps %.1f\n".format(fps.fps()))
+        val local = localPose
+        if (local == null) {
+            append("Position: waiting for the room origin\n")
+        } else {
+            append("Position: x=%+.3f y=%+.3f z=%+.3f yaw=%+.1f\n"
+                .format(local.x, local.y, local.z, local.yawDeg))
+        }
+        fix?.let {
+            append("Nav: %s dist=%.2f headingError=%+.1f\n"
+                .format(it.state.name, it.distanceMeters, it.headingErrorDeg))
+        }
+        current?.destinations?.forEach { destination ->
+            append("  %-10s %+.2f %+.2f %+.2f".format(
+                destination.name,
+                destination.position.x,
+                destination.position.y,
+                destination.position.z,
+            ))
+            if (local != null) append("   %.2f m away".format(distanceTo(destination, local)))
+            append("\n")
+        }
+    }
+
+    private fun visibleIf(condition: Boolean) = if (condition) View.VISIBLE else View.GONE
 
     private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
 
@@ -547,6 +717,7 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     companion object {
         private const val TAG = "P2Check"
+        private const val NAV_TAG = "NavCheck"
         private const val POSE_LOG_INTERVAL = 30L
         private const val EXTRA_ROOM_ID = "room_id"
         private const val EXTRA_ROOM_NAME = "room_name"
