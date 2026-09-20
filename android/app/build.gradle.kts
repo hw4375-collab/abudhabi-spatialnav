@@ -46,4 +46,9 @@ dependencies {
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
+
+    // L1 localization: VIO pose, depth, and (later) Cloud Anchors.
+    implementation("com.google.ar:core:1.49.0")
+
+    testImplementation("junit:junit:4.13.2")
 }

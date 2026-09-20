@@ -1,6 +1,7 @@
 package com.hackson.spatialnav
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -15,7 +16,9 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import com.hackson.spatialnav.ar.ArDiagnosticActivity
 import com.hackson.spatialnav.databinding.ActivityMainBinding
+import com.hackson.spatialnav.util.RollingFps
 import java.util.Locale
 import java.util.concurrent.Executors
 
@@ -25,6 +28,9 @@ import java.util.concurrent.Executors
  * Every capability the navigation stack depends on is reported as an explicit
  * PASS / FAIL / PENDING line, on screen and in logcat under the tag [TAG], so a tester
  * with the phone can decide the outcome without reading the code.
+ *
+ * This screen owns the physical camera through CameraX. ARCore cannot share it, so the
+ * binding is released in [onPause] before the AR diagnostic can resume.
  */
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
@@ -33,6 +39,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var binding: ActivityMainBinding
     private lateinit var tts: TextToSpeech
     private val analysisExecutor = Executors.newSingleThreadExecutor()
+    private val fps = RollingFps()
+    private var cameraProvider: ProcessCameraProvider? = null
 
     private val results = linkedMapOf(
         CHECK_PERMISSION to Result.PENDING,
@@ -43,9 +51,6 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     )
     private val details = mutableMapOf<String, String>()
 
-    private var frameCount = 0L
-    private var firstFrameNanos = 0L
-    private var lastFrameNanos = 0L
 
     private val requestCamera =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -72,6 +77,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             if (code != TextToSpeech.SUCCESS) {
                 report(CHECK_TTS_SPEAK, Result.FAIL, "speak() returned $code")
             }
+        }
+
+        binding.arButton.setOnClickListener {
+            startActivity(Intent(this, ArDiagnosticActivity::class.java))
         }
 
         tts = TextToSpeech(this, this)
@@ -128,6 +137,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         providerFuture.addListener({
             try {
                 val provider = providerFuture.get()
+                cameraProvider = provider
                 val preview = Preview.Builder().build().also {
                     it.setSurfaceProvider(binding.previewView.surfaceProvider)
                 }
@@ -148,24 +158,15 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun onAnalyzerFrame(width: Int, height: Int) {
-        val now = System.nanoTime()
-        frameCount++
-        if (frameCount == 1L) {
-            firstFrameNanos = now
-        }
-        lastFrameNanos = now
+        fps.record()
+        val frameCount = fps.totalFrames
         if (frameCount == FRAMES_REQUIRED) {
             report(CHECK_ANALYSIS, Result.PASS, "received $FRAMES_REQUIRED frames at ${width}x$height")
         }
         if (frameCount % FRAME_LOG_INTERVAL == 0L) {
+            Log.i(TAG, "frames=$frameCount fps=%.1f".format(fps.fps()))
             runOnUiThread { render() }
         }
-    }
-
-    private fun analyzerFps(): Double {
-        val elapsed = lastFrameNanos - firstFrameNanos
-        if (frameCount < 2 || elapsed <= 0) return 0.0
-        return (frameCount - 1) * 1_000_000_000.0 / elapsed
     }
 
     private fun report(check: String, result: Result, detail: String) {
@@ -180,9 +181,27 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             val detail = details[check]?.let { " — $it" } ?: ""
             "[${result.name.padEnd(7)}] $check$detail"
         }
-        val frames = "frames=$frameCount fps=%.1f".format(analyzerFps())
+        val frames = "frames=${fps.totalFrames} fps=%.1f (3 s window)".format(fps.fps())
         binding.statusText.text =
             "${Build.MANUFACTURER} ${Build.MODEL} / Android ${Build.VERSION.RELEASE}\n$body\n$frames"
+    }
+
+    /**
+     * ARCore needs exclusive access to the camera, so the CameraX binding cannot outlive this
+     * screen even for the moment it takes to start the AR activity.
+     */
+    override fun onPause() {
+        super.onPause()
+        cameraProvider?.unbindAll()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED && cameraProvider != null
+        ) {
+            startCamera()
+        }
     }
 
     override fun onDestroy() {

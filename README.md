@@ -58,3 +58,5 @@ and visualization layer, not a navigation dependency.
 * `docs/02-hardware-requirements.md` — what the demo phone must support
 * `docs/03-device-compatibility-checklist.md` — 5-minute check for a candidate phone
 * `docs/04-p0-device-test.md` — how to run the P0 hardware validation on the phone
+* `docs/05-arcore-camera-ownership.md` — why ARCore, not CameraX, owns the camera
+* `docs/06-p1-device-test.md` — TTS fix plus the ARCore capability / live pose test
