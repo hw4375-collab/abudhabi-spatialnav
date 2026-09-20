@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">SpatialNav</string>
+    <string name="speak">Speak test instruction</string>
+</resources>
