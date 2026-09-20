@@ -2,6 +2,8 @@ android/.gradle/
 android/build/
 android/app/build/
 android/local.properties
+shared/build/
+desktop/build/
 .idea/
 __pycache__/
 *.apk

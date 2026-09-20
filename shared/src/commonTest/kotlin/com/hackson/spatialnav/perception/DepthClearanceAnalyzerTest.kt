@@ -2,8 +2,8 @@ package com.hackson.spatialnav.perception
 
 import com.hackson.spatialnav.perception.DepthClearanceAnalyzer.Clearance
 import com.hackson.spatialnav.perception.DepthClearanceAnalyzer.State
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.Test
 
 class DepthClearanceAnalyzerTest {
 

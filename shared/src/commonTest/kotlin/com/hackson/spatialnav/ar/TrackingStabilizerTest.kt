@@ -1,8 +1,8 @@
 package com.hackson.spatialnav.ar
 
 import com.hackson.spatialnav.ar.TrackingStabilizer.State
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.Test
 
 class TrackingStabilizerTest {
 

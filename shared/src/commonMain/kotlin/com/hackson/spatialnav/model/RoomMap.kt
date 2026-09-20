@@ -59,7 +59,7 @@ data class SpatialReferenceRecord(
 ) {
     val isExpired: Boolean
         get() = ttlDays > 0 && hostedAtEpochMs > 0L &&
-            System.currentTimeMillis() - hostedAtEpochMs > ttlDays * MILLIS_PER_DAY
+            nowEpochMs() - hostedAtEpochMs > ttlDays * MILLIS_PER_DAY
 
     private companion object {
         const val MILLIS_PER_DAY = 24L * 60L * 60L * 1000L

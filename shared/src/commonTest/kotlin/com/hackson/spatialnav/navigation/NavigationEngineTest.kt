@@ -1,9 +1,9 @@
 package com.hackson.spatialnav.navigation
 
 import com.hackson.spatialnav.model.Vec3
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class NavigationEngineTest {
 
@@ -57,7 +57,7 @@ class NavigationEngineTest {
         // Target behind and slightly right, user facing almost backwards: the short turn is
         // a few degrees to the left, not 350 degrees to the right.
         val fix = NavigationEngine.solve(at(0f, 0f, 175f), Vec3(1f, 0f, -5f))
-        assertTrue("expected a small left turn, got ${fix.headingErrorDeg}", fix.headingErrorDeg < 0f)
+        assertTrue(fix.headingErrorDeg < 0f, "expected a small left turn, got ${fix.headingErrorDeg}")
         assertTrue(fix.headingErrorDeg > -20f)
     }
 
