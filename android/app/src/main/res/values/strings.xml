@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">SpatialNav</string>
-    <string name="speak">Speak test instruction</string>
+    <string name="speak">Test TTS</string>
 </resources>
