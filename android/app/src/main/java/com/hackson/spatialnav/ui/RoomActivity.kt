@@ -29,6 +29,8 @@ import com.google.ar.core.exceptions.CameraNotAvailableException
 import com.google.ar.core.exceptions.UnavailableException
 import com.hackson.spatialnav.BuildConfig
 import com.hackson.spatialnav.R
+import com.hackson.spatialnav.ai.DestinationResolver
+import com.hackson.spatialnav.ai.OpenAiDestinationService
 import com.hackson.spatialnav.ar.BackgroundRenderer
 import com.hackson.spatialnav.ar.CloudAnchorStrategy
 import com.hackson.spatialnav.ar.ManualOriginStrategy
@@ -74,6 +76,7 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private val fps = RollingFps()
     private val stabilizer = TrackingStabilizer()
     private val announcer = GuidanceAnnouncer()
+    private val destinationService = OpenAiDestinationService()
 
     /** Work that must run on the GL thread, where the ARCore session is driven. */
     private val glTasks = ConcurrentLinkedQueue<(Frame) -> Unit>()
@@ -151,6 +154,11 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
         binding.primaryButton.setOnClickListener { onPrimaryAction() }
         binding.addDestinationButton.setOnClickListener { askDestinationToAdd() }
+        binding.findDestinationButton.setOnClickListener { askAssistant() }
+        binding.askInput.setOnEditorActionListener { _, _, _ ->
+            askAssistant()
+            true
+        }
         binding.stopButton.setOnClickListener { stopNavigation() }
         binding.debugToggle.setOnClickListener {
             binding.debugText.visibility =
@@ -208,6 +216,7 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     override fun onDestroy() {
+        destinationService.shutdown()
         tts?.shutdown()
         tts = null
         if (::strategy.isInitialized) strategy.close()
@@ -434,6 +443,45 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             .format(local.x, local.y, local.z, local.yawDeg))
         speak("$name saved here.")
         render()
+    }
+
+    // ---- natural language ---------------------------------------------------------------
+
+    /**
+     * The assistant only picks a name out of the destinations this room already has; if it
+     * cannot, the user is pointed back at the buttons, which never stop working.
+     */
+    private fun askAssistant() {
+        val request = binding.askInput.text.toString().trim()
+        if (request.isEmpty()) return
+        val destinations = room?.destinations.orEmpty()
+        if (destinations.isEmpty()) {
+            showAssistantStatus(getString(R.string.ai_no_match))
+            return
+        }
+        binding.findDestinationButton.isEnabled = false
+        showAssistantStatus(getString(R.string.ai_thinking))
+        destinationService.resolve(request, destinations) { outcome ->
+            binding.findDestinationButton.isEnabled = true
+            when (outcome) {
+                is DestinationResolver.Outcome.Matched -> {
+                    binding.askInput.text.clear()
+                    showAssistantStatus(null)
+                    startNavigation(outcome.destination)
+                }
+
+                DestinationResolver.Outcome.NoMatch ->
+                    showAssistantStatus(getString(R.string.ai_no_match))
+
+                is DestinationResolver.Outcome.Failed ->
+                    showAssistantStatus("${getString(R.string.ai_no_match)} (${outcome.reason})")
+            }
+        }
+    }
+
+    private fun showAssistantStatus(text: String?) {
+        binding.aiStatus.text = text.orEmpty()
+        binding.aiStatus.visibility = visibleIf(text != null)
     }
 
     // ---- navigation ---------------------------------------------------------------------

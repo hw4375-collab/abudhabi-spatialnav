@@ -11,15 +11,23 @@ plugins {
  * environment variable. Without it the app still runs and falls back to the manual-origin
  * spatial reference.
  */
-val arcoreApiKey: String = run {
+fun secret(propertyName: String, environmentName: String): String {
     val local = rootProject.file("local.properties")
     val fromFile = if (local.exists()) {
-        Properties().apply { local.inputStream().use(::load) }.getProperty("arcore.apiKey")
+        Properties().apply { local.inputStream().use(::load) }.getProperty(propertyName)
     } else {
         null
     }
-    fromFile ?: System.getenv("ARCORE_API_KEY") ?: ""
+    return fromFile ?: System.getenv(environmentName) ?: ""
 }
+
+val arcoreApiKey: String = secret("arcore.apiKey", "ARCORE_API_KEY")
+
+/**
+ * Hackathon demo configuration only: a key baked into the APK is extractable, so production
+ * must route the call through a backend proxy that holds the key.
+ */
+val openAiApiKey: String = secret("openai.apiKey", "OPENAI_API_KEY")
 
 android {
     namespace = "com.hackson.spatialnav"
@@ -34,6 +42,7 @@ android {
 
         manifestPlaceholders["arcoreApiKey"] = arcoreApiKey
         buildConfigField("boolean", "ARCORE_API_KEY_CONFIGURED", arcoreApiKey.isNotEmpty().toString())
+        buildConfigField("String", "OPENAI_API_KEY", "\"$openAiApiKey\"")
     }
 
     buildTypes {

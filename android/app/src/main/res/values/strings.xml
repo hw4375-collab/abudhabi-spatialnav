@@ -15,6 +15,10 @@
     <string name="add_destination">Add Destination</string>
     <string name="where_to">Where do you want to go?</string>
     <string name="tracking_ready">Spatial tracking ready</string>
+    <string name="ask_hint">Ask SpatialNav: “Take me to the restroom”</string>
+    <string name="find_destination">Find Destination</string>
+    <string name="ai_thinking">Understanding destination…</string>
+    <string name="ai_no_match">I couldn\'t match that destination. Choose one below.</string>
     <string name="mark_door">Door</string>
     <string name="mark_bathroom">Bathroom</string>
     <string name="mark_desk">Desk</string>

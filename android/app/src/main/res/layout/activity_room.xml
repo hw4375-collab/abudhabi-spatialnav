@@ -79,6 +79,40 @@
             android:textColor="#FFFFFF"
             android:textSize="26sp" />
 
+        <!-- Natural language shortcut; the buttons below remain the reliable path. -->
+        <EditText
+            android:id="@+id/askInput"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:layout_marginTop="12dp"
+            android:autofillHints="no"
+            android:background="#22FFFFFF"
+            android:hint="@string/ask_hint"
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#80FFFFFF"
+            android:textSize="20sp" />
+
+        <Button
+            android:id="@+id/findDestinationButton"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:layout_marginTop="8dp"
+            android:text="@string/find_destination"
+            android:textSize="20sp" />
+
+        <TextView
+            android:id="@+id/aiStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="#FFCC80"
+            android:textSize="18sp"
+            android:visibility="gone" />
+
         <ScrollView
             android:layout_width="match_parent"
             android:layout_height="0dp"

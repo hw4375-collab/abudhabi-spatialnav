@@ -13,6 +13,11 @@ instructions.
 4. **Voice guidance** — "Turn left.", "Bathroom is 3 meters ahead.", "You have arrived at
    Bathroom." Speech happens on instruction changes and distance milestones only.
 
+You can also just ask: typing *"Take me to the restroom"* uses **OpenAI — natural-language
+destination understanding** to pick `Bathroom` out of the destinations this room already
+has, then hands over to the same deterministic navigation. The model never computes
+coordinates, localization or routes. Setup: `docs/09-ai-destination-qa.md`.
+
 Built with **Kotlin** in **Android Studio**, on **ARCore** (motion tracking and a persistent
 spatial reference) and **Android TextToSpeech**. Open the **`android/`** directory in
 Android Studio and run the `app` configuration on a connected device.
@@ -86,3 +91,4 @@ and visualization layer, not a navigation dependency.
 * `docs/06-p1-device-test.md` — TTS fix plus the ARCore capability / live pose test
 * `docs/07-p2-device-test.md` — persistent room + destinations, and the ARCore API key setup
 * `docs/08-p3-demo-qa.md` — the demo flow, navigation rules and device QA checklist
+* `docs/09-ai-destination-qa.md` — natural-language destination resolution and its API key
