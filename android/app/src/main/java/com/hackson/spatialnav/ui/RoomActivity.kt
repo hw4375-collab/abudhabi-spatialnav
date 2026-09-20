@@ -26,6 +26,7 @@ import com.google.ar.core.Pose
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
 import com.google.ar.core.exceptions.CameraNotAvailableException
+import com.google.ar.core.exceptions.NotYetAvailableException
 import com.google.ar.core.exceptions.UnavailableException
 import com.hackson.spatialnav.BuildConfig
 import com.hackson.spatialnav.R
@@ -44,6 +45,8 @@ import com.hackson.spatialnav.model.Vec3
 import com.hackson.spatialnav.navigation.GuidanceAnnouncer
 import com.hackson.spatialnav.navigation.NavigationEngine
 import com.hackson.spatialnav.navigation.NavigationFrame
+import com.hackson.spatialnav.perception.DepthClearanceAnalyzer
+import com.hackson.spatialnav.perception.DepthSampler
 import com.hackson.spatialnav.persistence.RoomStore
 import com.hackson.spatialnav.util.RollingFps
 import java.util.Locale
@@ -77,6 +80,7 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private val stabilizer = TrackingStabilizer()
     private val announcer = GuidanceAnnouncer()
     private val destinationService = OpenAiDestinationService()
+    private val obstacles = DepthClearanceAnalyzer()
 
     /** Work that must run on the GL thread, where the ARCore session is driven. */
     private val glTasks = ConcurrentLinkedQueue<(Frame) -> Unit>()
@@ -118,6 +122,13 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     @Volatile
     private var fix: NavigationEngine.Fix? = null
+
+    @Volatile
+    private var obstacleState = DepthClearanceAnalyzer.State.UNKNOWN
+
+    private var lastSpokenObstacle: DepthClearanceAnalyzer.State? = null
+    private var lastObstacleSpeechMs = 0L
+    private var depthSupported = false
 
     private val requestCamera =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -261,6 +272,7 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                     } else {
                         Config.DepthMode.DISABLED
                     }
+                    depthSupported = depthMode == Config.DepthMode.AUTOMATIC
                     focusMode = Config.FocusMode.AUTO
                     updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
                     // Hosting and resolving both need this; harmless when unused.
@@ -490,6 +502,9 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         target = destination
         fix = null
         announcer.reset()
+        obstacles.reset()
+        obstacleState = DepthClearanceAnalyzer.State.UNKNOWN
+        lastSpokenObstacle = null
         phase = Phase.NAVIGATING
         Log.i(NAV_TAG, "NAV_START destination=${destination.name} " +
             "target=%+.2f,%+.2f".format(destination.position.x, destination.position.z))
@@ -510,7 +525,10 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         val destination = target ?: return
         val solved = NavigationEngine.solve(local, destination.position)
         fix = solved
-        announcer.next(solved, destination.name, System.currentTimeMillis())?.let { speak(it) }
+        // The announcer still runs while an obstacle is being cleared so its milestones
+        // stay current, but the obstacle layer owns the voice until the way is open.
+        val phrase = announcer.next(solved, destination.name, System.currentTimeMillis())
+        if (phrase != null && !obstacleState.isObstacle) speak(phrase)
         if (fps.totalFrames % POSE_LOG_INTERVAL == 0L) {
             Log.i(
                 NAV_TAG,
@@ -522,6 +540,60 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 )
             )
         }
+    }
+
+    // ---- obstacles ----------------------------------------------------------------------
+
+    /**
+     * Reactive safety layer: it only answers "is the way ahead blocked, and which side is
+     * more open", and it overrides the destination guidance when it is. It is not a planner
+     * and cannot route around an arbitrary obstacle.
+     */
+    private fun updateObstacles(frame: Frame) {
+        val clearance = try {
+            frame.acquireDepthImage16Bits().use { DepthSampler.sample(it) }
+        } catch (e: NotYetAvailableException) {
+            // Normal for the first frames and the odd frame after that; the analyzer
+            // decides how long a gap may be ridden out before it reports UNKNOWN.
+            DepthClearanceAnalyzer.Clearance(Float.NaN, Float.NaN, Float.NaN)
+        }
+        val previous = obstacleState
+        val state = obstacles.update(clearance)
+        obstacleState = state
+        if (state != previous || fps.totalFrames % OBSTACLE_LOG_INTERVAL == 0L) {
+            Log.i(
+                OBSTACLE_TAG,
+                "left=%s center=%s right=%s state=%s".format(
+                    format(clearance.leftMeters),
+                    format(clearance.centerMeters),
+                    format(clearance.rightMeters),
+                    state.name,
+                )
+            )
+        }
+        if (state != previous) runOnUiThread { announceObstacle(previous, state) }
+    }
+
+    private fun format(meters: Float) = if (meters.isNaN()) "-" else "%.2f".format(meters)
+
+    private fun announceObstacle(
+        previous: DepthClearanceAnalyzer.State,
+        state: DepthClearanceAnalyzer.State,
+    ) {
+        val now = System.currentTimeMillis()
+        if (now - lastObstacleSpeechMs < OBSTACLE_SPEECH_COOLDOWN_MS && state == lastSpokenObstacle) return
+        val phrase = when {
+            state == DepthClearanceAnalyzer.State.MOVE_LEFT -> "Obstacle ahead. Move left."
+            state == DepthClearanceAnalyzer.State.MOVE_RIGHT -> "Obstacle ahead. Move right."
+            state == DepthClearanceAnalyzer.State.STOP -> "Stop. Obstacle ahead."
+            state == DepthClearanceAnalyzer.State.CLEAR && previous.isObstacle -> "Path clear."
+            else -> null
+        } ?: return
+        // Let the destination guidance speak again immediately once the way is open.
+        if (state == DepthClearanceAnalyzer.State.CLEAR) announcer.reset()
+        lastSpokenObstacle = state
+        lastObstacleSpeechMs = now
+        speak(phrase)
     }
 
     private fun speak(text: String) {
@@ -586,6 +658,12 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             strategy.id == CloudAnchorStrategy.ID
         ) {
             runOnUiThread { startResolve(existing) }
+        }
+
+        if (phase == Phase.NAVIGATING && depthSupported &&
+            fps.totalFrames % DEPTH_SAMPLE_INTERVAL == 0L
+        ) {
+            updateObstacles(frame)
         }
 
         val local = originPose()?.let { origin ->
@@ -698,6 +776,12 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             binding.distanceText.text = ""
             return
         }
+        if (obstacleState.isObstacle) {
+            renderObstacleOverride()
+            return
+        }
+        binding.pathStatus.setText(R.string.path_clear)
+        binding.pathStatus.setTextColor(0xFF69F0AE.toInt())
         binding.arrowText.text = when (solved.state) {
             NavigationEngine.State.GO_FORWARD -> "\u2191"
             NavigationEngine.State.TURN_LEFT -> "\u21B0"
@@ -714,6 +798,22 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             destination.name
         } else {
             "%.1f m".format(solved.distanceMeters)
+        }
+    }
+
+    /** Safety wins the screen: the destination stays visible, the instruction does not. */
+    private fun renderObstacleOverride() {
+        binding.pathStatus.setText(R.string.obstacle_ahead)
+        binding.pathStatus.setTextColor(0xFFFF5252.toInt())
+        binding.arrowText.text = when (obstacleState) {
+            DepthClearanceAnalyzer.State.MOVE_LEFT -> "\u2190"
+            DepthClearanceAnalyzer.State.MOVE_RIGHT -> "\u2192"
+            else -> "\u2715"
+        }
+        binding.instructionText.text = when (obstacleState) {
+            DepthClearanceAnalyzer.State.MOVE_LEFT -> getString(R.string.move_left)
+            DepthClearanceAnalyzer.State.MOVE_RIGHT -> getString(R.string.move_right)
+            else -> getString(R.string.stop)
         }
     }
 
@@ -739,6 +839,7 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             append("Nav: %s dist=%.2f headingError=%+.1f\n"
                 .format(it.state.name, it.distanceMeters, it.headingErrorDeg))
         }
+        append("Depth: ${if (depthSupported) obstacleState.name else "unsupported"}\n")
         current?.destinations?.forEach { destination ->
             append("  %-10s %+.2f %+.2f %+.2f".format(
                 destination.name,
@@ -766,7 +867,13 @@ class RoomActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     companion object {
         private const val TAG = "P2Check"
         private const val NAV_TAG = "NavCheck"
+        private const val OBSTACLE_TAG = "ObstacleCheck"
         private const val POSE_LOG_INTERVAL = 30L
+
+        /** ~6 depth reads per second at 60 fps: enough to react, cheap enough to ignore. */
+        private const val DEPTH_SAMPLE_INTERVAL = 10L
+        private const val OBSTACLE_LOG_INTERVAL = 150L
+        private const val OBSTACLE_SPEECH_COOLDOWN_MS = 3_000L
         private const val EXTRA_ROOM_ID = "room_id"
         private const val EXTRA_ROOM_NAME = "room_name"
 

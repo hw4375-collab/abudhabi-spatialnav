@@ -12,6 +12,9 @@ instructions.
 3. **Navigate** — reopen the space later, pick a destination, and follow the large arrow.
 4. **Voice guidance** — "Turn left.", "Bathroom is 3 meters ahead.", "You have arrived at
    Bathroom." Speech happens on instruction changes and distance milestones only.
+5. **Obstacles** — ARCore depth watches the space straight ahead and overrides the
+   guidance when it is blocked: "Obstacle ahead. Move right." This is reactive avoidance,
+   not path planning (`docs/10-p4-obstacle-qa.md`).
 
 You can also just ask: typing *"Take me to the restroom"* uses **OpenAI — natural-language
 destination understanding** to pick `Bathroom` out of the destinations this room already
@@ -92,3 +95,4 @@ and visualization layer, not a navigation dependency.
 * `docs/07-p2-device-test.md` — persistent room + destinations, and the ARCore API key setup
 * `docs/08-p3-demo-qa.md` — the demo flow, navigation rules and device QA checklist
 * `docs/09-ai-destination-qa.md` — natural-language destination resolution and its API key
+* `docs/10-p4-obstacle-qa.md` — reactive depth obstacle avoidance: thresholds and QA

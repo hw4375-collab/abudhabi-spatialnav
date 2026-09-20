@@ -19,6 +19,9 @@
     <string name="find_destination">Find Destination</string>
     <string name="ai_thinking">Understanding destination…</string>
     <string name="ai_no_match">I couldn\'t match that destination. Choose one below.</string>
+    <string name="obstacle_ahead">OBSTACLE AHEAD</string>
+    <string name="move_left">MOVE LEFT</string>
+    <string name="move_right">MOVE RIGHT</string>
     <string name="mark_door">Door</string>
     <string name="mark_bathroom">Bathroom</string>
     <string name="mark_desk">Desk</string>
