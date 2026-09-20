@@ -1,4 +1,4 @@
-package com.hackson.spatialnav.nav
+package com.hackson.spatialnav.navigation
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

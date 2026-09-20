@@ -1,4 +1,4 @@
-package com.hackson.spatialnav
+package com.hackson.spatialnav.ui
 
 import android.Manifest
 import android.content.Intent
@@ -16,7 +16,6 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
-import com.hackson.spatialnav.ar.ArDiagnosticActivity
 import com.hackson.spatialnav.databinding.ActivityMainBinding
 import com.hackson.spatialnav.util.RollingFps
 import java.util.Locale
@@ -32,7 +31,7 @@ import java.util.concurrent.Executors
  * This screen owns the physical camera through CameraX. ARCore cannot share it, so the
  * binding is released in [onPause] before the AR diagnostic can resume.
  */
-class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
+class HardwareCheckActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private enum class Result { PENDING, PASS, FAIL }
 

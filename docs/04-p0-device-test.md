@@ -12,7 +12,7 @@ cd abudhabi-spatialnav/android
 echo "sdk.dir=$HOME/Library/Android/sdk" > local.properties   # macOS default
 adb devices                                                   # phone must show as "device"
 ./gradlew installDebug
-adb shell am start -n com.hackson.spatialnav/.MainActivity
+adb shell am start -n com.hackson.spatialnav/.ui.HardwareCheckActivity
 ```
 
 Already cloned: `git pull && cd android && ./gradlew installDebug`.

@@ -27,8 +27,17 @@
         <!-- optional: the app still installs and can report UNSUPPORTED on non-AR phones -->
         <meta-data android:name="com.google.ar.core" android:value="optional" />
 
+        <!--
+          Cloud Anchors authenticate with this key. It is injected from local.properties or
+          the ARCORE_API_KEY environment variable and is empty in a plain checkout, in which
+          case the app falls back to the manual-origin spatial reference.
+        -->
+        <meta-data
+            android:name="com.google.android.ar.API_KEY"
+            android:value="${arcoreApiKey}" />
+
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.RoomListActivity"
             android:exported="true"
             android:screenOrientation="portrait">
             <intent-filter>
@@ -37,8 +46,16 @@
             </intent-filter>
         </activity>
         <activity
-            android:name=".ar.ArDiagnosticActivity"
+            android:name=".ui.RoomActivity"
             android:exported="false"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name=".ui.HardwareCheckActivity"
+            android:exported="true"
+            android:screenOrientation="portrait" />
+        <activity
+            android:name=".ui.ArDiagnosticActivity"
+            android:exported="true"
             android:screenOrientation="portrait" />
     </application>
 </manifest>

@@ -31,6 +31,11 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties   # macOS default: ~/Library/And
 ./gradlew :app:assembleDebug
 ```
 
+Cloud Anchors need an ARCore API key, which is a personal credential and is never
+committed. Add `arcore.apiKey=...` to `android/local.properties` (or export
+`ARCORE_API_KEY`) to enable them; without it the app falls back to the manual-origin
+spatial reference. See `docs/07-p2-device-test.md`.
+
 Note: `settings.gradle.kts` lists the Google Maven Central mirror ahead of `mavenCentral()`
 because `repo.maven.apache.org` rate-limits (HTTP 429) the CI machine. It is harmless
 elsewhere.
@@ -40,7 +45,7 @@ elsewhere.
 | Layer | Question | Today's implementation |
 | --- | --- | --- |
 | L1 Localization | Where am I? | ARCore VIO + Cloud Anchors |
-| L2 RoomMap | Where can I go? | our own JSON model: anchors, destinations, waypoints, edges, occupancy |
+| L2 RoomMap | Where can I go? | our own JSON model: spatial reference, destinations, waypoints, edges |
 | L3 Perception | What is blocking me now? | ARCore Raw Depth |
 | L4 Navigation | How do I get there? | A\* over the RoomMap graph |
 | L5 Voice | What should I do next? | Android TextToSpeech |
@@ -60,3 +65,4 @@ and visualization layer, not a navigation dependency.
 * `docs/04-p0-device-test.md` — how to run the P0 hardware validation on the phone
 * `docs/05-arcore-camera-ownership.md` — why ARCore, not CameraX, owns the camera
 * `docs/06-p1-device-test.md` — TTS fix plus the ARCore capability / live pose test
+* `docs/07-p2-device-test.md` — persistent room + destinations, and the ARCore API key setup

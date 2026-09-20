@@ -19,7 +19,7 @@ source of device-specific breakage. It is not worth the risk for a hackathon.
 
 1. **ARCore is the single camera owner during navigation.** The AR session is the one that
    must never stutter — losing tracking loses the user's position, which is the whole product.
-2. **The two screens are separate activities.** `MainActivity` (P0, CameraX) releases its
+2. **The two screens are separate activities.** `HardwareCheckActivity` (P0, CameraX) releases its
    binding in `onPause`, before `ArDiagnosticActivity` reaches `onResume`. Lifecycle-bound
    CameraX would mostly do this on its own; `cameraProvider.unbindAll()` is called explicitly
    so the hand-off does not depend on timing.

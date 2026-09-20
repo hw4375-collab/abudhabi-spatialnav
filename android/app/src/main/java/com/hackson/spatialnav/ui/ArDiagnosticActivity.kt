@@ -1,4 +1,4 @@
-package com.hackson.spatialnav.ar
+package com.hackson.spatialnav.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -17,8 +17,9 @@ import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
 import com.google.ar.core.exceptions.CameraNotAvailableException
 import com.google.ar.core.exceptions.UnavailableException
+import com.hackson.spatialnav.ar.BackgroundRenderer
 import com.hackson.spatialnav.databinding.ActivityArBinding
-import com.hackson.spatialnav.nav.NavigationFrame
+import com.hackson.spatialnav.navigation.NavigationFrame
 import com.hackson.spatialnav.util.RollingFps
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10

@@ -1,4 +1,4 @@
-package com.hackson.spatialnav.nav
+package com.hackson.spatialnav.navigation
 
 import kotlin.math.abs
 import kotlin.math.atan2
